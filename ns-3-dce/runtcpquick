@@ -1,0 +1,2 @@
+./waf --run "oneNewLTE --nUE=8 --D=1000 --disWifi=true --stopTime=5.5 --isUDP=0 --ns3::ConfigStore::Filename=../../lte.default"
+

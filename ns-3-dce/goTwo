@@ -1,0 +1,1 @@
+./waf --run "oneNode --nUE=2 --disWifi=true"

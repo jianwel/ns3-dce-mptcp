@@ -1,0 +1,1 @@
+./waf --command-template="%s --ns3::ConfigStore::Filename=lte-input-defaults.save --ns3::ConfigStore::Mode=Load --ns3::ConfigStore::FileFormat=RawText" --run oneNewLTE
