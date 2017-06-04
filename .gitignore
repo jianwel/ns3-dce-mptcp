@@ -4,6 +4,8 @@
 .waf*
 build/
 ns3waf/__init__.pyc
+*.pyc
 #wscript
 wutils.py
+pcap
 data/
