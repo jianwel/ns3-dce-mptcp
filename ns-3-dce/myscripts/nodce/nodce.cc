@@ -1,0 +1,588 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+
+//
+// Handoff scenario with Multipath TCPed iperf
+//
+// Simulation Topology:
+// Scenario: H1 has 3G
+//           during movement, MN keeps iperf session to SV.
+//
+//   <--------------------            ----------------------->
+//                  LTE               Ethernet
+//                   sim0 +----------+ sim1
+//                  +------|  LTE  R  |------+
+//                  |     +----------+      |
+//              +---+                       +-----+
+//          sim0|                                 |sim0
+//     +----+---+                                 +----+---+
+//     |   H1   |                                 |   H2   |
+//     +---+----+                                 +----+---+
+//          sim1|                                 |sim1
+//              +--+                        +-----+
+//                 | sim0 +----------+ sim1 |
+//                  +-----|  WiFi R  |------+
+//                        +----------+
+//                  WiFi              Ethernet
+//   <--------------------            ----------------------->
+
+#include "ns3/network-module.h"
+#include "ns3/core-module.h"
+#include "ns3/internet-module.h"
+#include "ns3/point-to-point-module.h"
+#include "ns3/wifi-module.h"
+#include "ns3/lte-module.h"
+#include "ns3/mobility-module.h"
+#include "ns3/applications-module.h"
+#include "ns3/netanim-module.h"
+#include "ns3/constant-position-mobility-model.h"
+#include "ns3/config-store-module.h"
+#include "ns3/csma-module.h"
+#include "ns3/bridge-module.h"
+#include "ns3/csma-helper.h"
+#include "ns3/inet-socket-address.h"
+
+//#include "ns3/mp-tcp-bulk-send-application.h"
+
+#include "ns3/config-store.h"
+
+#include "ns3/flow-monitor.h"
+#include "ns3/flow-monitor-helper.h"
+
+#include <unistd.h>
+
+using namespace ns3;
+using std::cout;
+using std::endl;
+
+NS_LOG_COMPONENT_DEFINE("NoDceLteWifi");
+
+void setPos(Ptr<Node> n, int x, int y, int z)
+{
+    Ptr<ConstantPositionMobilityModel> loc = CreateObject<ConstantPositionMobilityModel>();
+    n->AggregateObject(loc);
+    Vector locVec2(x, y, z);
+    loc->SetPosition(locVec2);
+}
+
+void setPosSpeed(Ptr<Node> n, int x, int y, int z, const Vector &speed)
+{
+    //Ptr<ConstantPositionMobilityModel> loc = CreateObject<ConstantPositionMobilityModel> ();
+
+    Ptr<ConstantVelocityMobilityModel> loc = CreateObject<ConstantVelocityMobilityModel>();
+    n->AggregateObject(loc);
+    Vector locVec2(x, y, z);
+    loc->SetPosition(locVec2);
+
+    loc->SetVelocity(speed);
+}
+
+void PrintTcpFlags(std::string key, std::string value)
+{
+    NS_LOG_INFO(key << "=" << value);
+}
+
+unsigned long int m_bytesTotal[5];
+const int INTERVAL = 5;
+int nUE = 1;
+
+const int AREA_X = 5000;
+const int AREA_Y = 5000;
+
+const int IPERF_RANDOM_SART = 5;
+
+void ReceivedPacket(std::string context, Ptr<const Packet> p, const Address &addr)
+{
+    m_bytesTotal[0] += p->GetSize();
+    // cout<<context<<" "<<p->GetSize ()<<endl;
+}
+
+void Throughput() // in Mbps calculated every 2s
+{
+    double mbps = (((m_bytesTotal[0] * 8) / 1000000.0f) / (double)INTERVAL);
+    double time_tp = Simulator::Now().GetSeconds();
+    cout << "time: " << time_tp << "\t"
+         << "NS3 total Throughput: " << mbps << "Mbps" << endl;
+    m_bytesTotal[0] = 0;
+    Simulator::Schedule(Seconds(INTERVAL), &Throughput);
+}
+
+int main(int argc, char *argv[])
+{
+   // LogComponentEnable("NoDceLteWifi", LOG_LEVEL_ALL);
+    //    LogComponentEnable ("MpTcpSocketBase", LOG_LEVEL_ALL);
+    std::string bufSize = "";
+    bool disWifi = false;
+    bool disLte = false;
+    bool isDownlink = true;
+    double stopTime = 20.0;
+
+    //unit in nanosecond, so this is  0.1ms
+    int p2pdelay = 100000;
+
+    // std::string p2pdelay = "2ms";
+
+    Ipv4StaticRoutingHelper ipv4routinghelper;
+
+    CommandLine cmd;
+    cmd.AddValue("bufsize", "Snd/Rcv buffer size.", bufSize);
+    cmd.AddValue("disWifi", "Disable WiFi.", disWifi);
+    cmd.AddValue("disLte", "Disable LTE.", disLte);
+    cmd.AddValue("isDownlink", "is Downlink flow or uplink flow.", isDownlink);
+    cmd.AddValue("nUE", "the number of UEs.", nUE);
+    cmd.AddValue("stopTime", "StopTime of simulatino.", stopTime);
+
+    cmd.AddValue("p2pdelay", "Delay of p2p links. default is .1ms.", p2pdelay);
+    cmd.Parse(argc, argv);
+
+    ConfigStore inputConfig;
+    inputConfig.ConfigureDefaults();
+
+    MobilityHelper mobility;
+    mobility.SetPositionAllocator("ns3::GridPositionAllocator",
+                                  "MinX", DoubleValue(1.0),
+                                  "MinY", DoubleValue(1.0),
+                                  "DeltaX", DoubleValue(5.0),
+                                  "DeltaY", DoubleValue(5.0),
+                                  "GridWidth", UintegerValue(3),
+                                  "LayoutType", StringValue("RowFirst"));
+    mobility.SetMobilityModel("ns3::RandomWalk2dMobilityModel",
+                              "Mode", StringValue("Time"),
+                              "Time", StringValue("2s"),
+                              "Speed", StringValue("ns3::ConstantRandomVariable[Constant=1.0]"),
+                              "Bounds", RectangleValue(Rectangle(0.0, 20.0, 0.0, 20.0)));
+
+    //Ptr<FlowMonitor> flowMonitor;
+    //FlowMonitorHelper flowHelper;
+    //flowMonitor = flowHelper.InstallAll();
+
+    Ptr<OutputStreamWrapper> rtoutCN = Create<OutputStreamWrapper>("rtableCN", std::ios::out);
+    Ptr<OutputStreamWrapper> rtoutUE = Create<OutputStreamWrapper>("rtableUE", std::ios::out);
+    Ptr<OutputStreamWrapper> rtoutAP = Create<OutputStreamWrapper>("rtableAP", std::ios::out);
+    uint pgwI = 0;
+    uint routerI = 0;
+
+    int isOneFurther = 0;
+    int distance = 50;
+    int furtherDistance = 50;
+
+    if (disWifi && disLte)
+    {
+        cout<<"no active interface"<<endl;
+        return 0;
+    }
+
+    if (disWifi)
+        cout<<"wifi is disabled"<<endl;
+
+    if (disLte)
+        cout<<"lte is disabled"<<endl;
+
+    GlobalValue::Bind("ChecksumEnabled", BooleanValue(true));
+    NodeContainer nodes, routers, cn;
+
+    //node 0-9
+    nodes.Create(nUE);
+
+    //wifi router is node 10
+    routers.Create(1);
+
+    //NS3 can not enable pcap on a common node
+    //routers.Get(0).EnablePcapAll("router", false);
+
+    cn.Create(nUE);
+
+    //this should be before installing the stack
+    //  Config::SetDefault("ns3::Ipv4GlobalRouting::FlowEcmpRouting", BooleanValue(true));
+    //Config::SetDefault("ns3::TcpSocket::SegmentSize", UintegerValue(1400));
+    //Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(0));
+
+     Config::SetDefault("ns3::DropTailQueue::Mode", StringValue("QUEUE_MODE_PACKETS"));
+    //Config::SetDefault("ns3::DropTailQueue::MaxPackets", UintegerValue(100));
+    Config::SetDefault("ns3::DropTailQueue::MaxPackets", UintegerValue(1000000000));
+
+    // Config::SetDefault("ns3::TcpL4Protocol::SocketType", TypeIdValue(MpTcpSocketBase::GetTypeId()));
+    //Config::SetDefault("ns3::MpTcpSocketBase::MaxSubflows", UintegerValue(8)); // Sink
+    // Config::SetDefault("ns3::MpTcpSocketBase::CongestionControl", StringValue("RTT_Compensator"));
+    //Config::SetDefault("ns3::MpTcpSocketBase::PathManagement", StringValue("NdiffPorts"));
+
+    InternetStackHelper stack;
+    stack.Install(nodes);
+    stack.Install(routers);
+    stack.Install(cn);
+    //PointToPointHelper pointToPoint;
+    NetDeviceContainer devices1;
+    NetDeviceContainer devices2, devicesWifi;
+
+    NetDeviceContainer csmaNetDevice;
+    NetDeviceContainer csmaNetDeviceWifi;
+    NetDeviceContainer wifiDevice;
+    NetDeviceContainer lteBridgeDevices;
+    NetDeviceContainer wifiBridgeDevices;
+
+    BridgeHelper bridge;
+    BridgeHelper bridgeW;
+
+    //mobility.Install (nodes);
+
+    Ptr<LteHelper> lteHelper = CreateObject<LteHelper>();
+
+    //epc is node 12
+    Ptr<PointToPointEpcHelper> epcHelper = CreateObject<PointToPointEpcHelper>();
+    YansWifiPhyHelper phy;
+
+    Ipv4AddressHelper address1, address2;
+    std::ostringstream cmd_oss;
+
+    //this is for the wifi's mn devices ip
+    address1.SetBase("10.1.0.0", "255.255.255.0");
+
+    //this is for the lte pgw and cn's lte interfaces
+    //the first network is 10.2.0.*, and the second is 10.2.1.*
+    //and if lte and wifi are both enabled, wifi is given 10.2.1.*
+    address2.SetBase("10.2.0.0", "255.255.255.0");
+    Ipv4InterfaceContainer if1, if2, if2Wifi;
+
+#if 0
+Ptr<RateErrorModel> em1 =
+        CreateObjectWithAttributes<RateErrorModel> ("RanVar", StringValue ("ns3::UniformRandomVariable[Min=0.0,Max=1.0]"),
+                "ErrorRate", DoubleValue (0.01),
+                "ErrorUnit", EnumValue (RateErrorModel::ERROR_UNIT_PACKET)
+                );
+#endif
+
+    //setPos (nodes.Get (0), -20, 30 / 2, 0);
+
+    for (uint32_t u = 0; u < nodes.GetN(); ++u)
+    {
+
+        setPos(cn.Get(u), 100, 30 / 2, 0);
+        // setPos (nodes.Get (u), -20, 30 / 2, 0);
+    }
+
+    //put nodes on a circle
+    double pi = 3.14159265;
+    double theta = 2 * pi / nUE;
+
+    double start = -pi;
+    for (unsigned int i = 0; i < nodes.GetN(); i++)
+    {
+        double angle = start + theta * i;
+        double x = distance * cos(angle);
+        double y = distance * sin(angle);
+        //cout<<"Pos " <<i<<": "<<x << " "<< y<<" "<< x*x+y*y<<endl;
+        if (isOneFurther && i == 0)
+        {
+            setPosSpeed((nodes.Get(i)), -furtherDistance, 0, 0, Vector(0, 0, 0));
+        }
+        else
+        {
+            setPosSpeed((nodes.Get(i)), x, y, 0, Vector(0, 0, 0));
+        }
+    }
+    /*
+
+       NodeContainer csmaSwitchs;
+       csmaSwitchs.Create (2);
+
+*/
+    CsmaHelper csmahelper;
+    CsmaHelper csmahelperWifi;
+
+    csmahelper.SetChannelAttribute("DataRate", DataRateValue(50000000000));
+    csmahelper.SetChannelAttribute("Delay", TimeValue(NanoSeconds(p2pdelay)));
+
+    csmahelperWifi.SetChannelAttribute("DataRate", DataRateValue(50000000000));
+    csmahelperWifi.SetChannelAttribute("Delay", TimeValue(NanoSeconds(p2pdelay)));
+
+    Ptr<Ipv4StaticRouting> wifiRouterStaticRouting = ipv4routinghelper.GetStaticRouting(routers.Get(0)->GetObject<Ipv4>());
+    Ptr<Ipv4StaticRouting> mnStaticRoutingForPrint = ipv4routinghelper.GetStaticRouting(nodes.Get(0)->GetObject<Ipv4>());
+    Ptr<Ipv4StaticRouting> cnStaticRoutingForPrint = ipv4routinghelper.GetStaticRouting(cn.Get(0)->GetObject<Ipv4>());
+
+    // LTE
+    if (!disLte)
+    {
+        // Left link: H1 <-> LTE-R
+        NodeContainer enbNodes;
+
+        Ptr<Node> bridgeLte = CreateObject<Node>();
+        //node 13
+        enbNodes.Create(1);
+
+        lteHelper->SetEpcHelper(epcHelper);
+        Ptr<Node> pgw = epcHelper->GetPgwNode();
+        //setPos (enbNodes.Get (0), 60, 40000, 0);
+        setPos(enbNodes.Get(0), 0, 0, 0);
+
+        //lteHelper->SetSchedulerType ("ns3::PssFfMacScheduler");
+        lteHelper->SetSchedulerType("ns3::PfFfMacScheduler");
+
+        NetDeviceContainer enbLteDevs = lteHelper->InstallEnbDevice(enbNodes);
+        NetDeviceContainer ueLteDevs = lteHelper->InstallUeDevice(nodes);
+
+        // Assign ip addresses
+        if1 = epcHelper->AssignUeIpv4Address(NetDeviceContainer(ueLteDevs));
+
+        for (unsigned int ii = 0; ii < if1.GetN(); ii++)
+            cout << "if1  " << ii << "  " << if1.GetAddress(ii, 0) << endl;
+
+        for (uint32_t u = 0; u < nodes.GetN(); ++u)
+        {
+            lteHelper->Attach(ueLteDevs.Get(u), enbLteDevs.Get(0));
+        }
+
+        // LTE-R <-> H2
+        // Right link
+        for (uint32_t u = 0; u < cn.GetN(); ++u)
+        {
+            csmaNetDevice = csmahelper.Install(NodeContainer(cn.Get(u), bridgeLte));
+            devices2.Add(csmaNetDevice.Get(0));
+            lteBridgeDevices.Add(csmaNetDevice.Get(1));
+            pgwI = u + 1;
+        }
+
+        csmaNetDevice = csmahelper.Install(NodeContainer(pgw, bridgeLte));
+        //devices2.Get (0)->SetAttribute ("ReceiveErrorModel", PointerValue (em1));
+        // Assign ip addresses
+        devices2.Add(csmaNetDevice.Get(0));
+        lteBridgeDevices.Add(csmaNetDevice.Get(1));
+
+        bridge.Install(bridgeLte, lteBridgeDevices);
+
+        if2 = address2.Assign(devices2);
+
+        for (unsigned int ii = 0; ii < if2.GetN(); ii++)
+            cout << ii << "  " << if2.GetAddress(ii, 0) << endl;
+
+        cout << " pgwI " << pgwI << "  " << if2.GetAddress(pgwI, 0) << endl;
+
+        cout << "if index " << devices2.Get(0)->GetIfIndex() << endl;
+        /*
+
+           for(uint32_t u = 0; u < cn.GetN (); ++u){
+
+           Ptr<Ipv4StaticRouting> cnStaticRouting = ipv4routinghelper.GetStaticRouting (cn.Get(u)->GetObject<Ipv4>());
+           cnStaticRouting->SetDefaultRoute (if2.GetAddress(pgwI, 0), devices2.Get (u)->GetIfIndex ());
+           }
+           */
+        for (uint32_t u = 0; u < nodes.GetN(); ++u)
+        {
+            // setup ip routes
+
+            //Ptr<Ipv4StaticRouting> cnStaticRouting = ipv4routinghelper.GetStaticRouting (if2.GetAddress(u, 0));
+            Ptr<Ipv4StaticRouting> cnStaticRouting = ipv4routinghelper.GetStaticRouting(cn.Get(u)->GetObject<Ipv4>());
+            //cnStaticRouting->AddNetworkRouteTo(Ipv4Address ("10.2.0.0"), Ipv4Mask ("255.255.255.0"), devices2.Get (u)->GetIfIndex ());
+            cnStaticRouting->AddNetworkRouteTo(Ipv4Address("7.0.0.0"), Ipv4Mask("255.255.255.0"), if2.GetAddress(pgwI, 0), devices2.Get(u)->GetIfIndex());
+        }
+
+        for (uint32_t u = 0; u < nodes.GetN(); ++u)
+        {
+            // setup ip routes
+            Ptr<Ipv4StaticRouting> ueStaticRouting = ipv4routinghelper.GetStaticRouting(nodes.Get(u)->GetObject<Ipv4>());
+            // nodes.Get(u)->GetObject<Ipv4> ()
+            cout << "epc address " << epcHelper->GetUeDefaultGatewayAddress() << "  " << ueLteDevs.Get(u)->GetIfIndex() << endl;
+            //ueStaticRouting->SetDefaultRoute (epcHelper->GetUeDefaultGatewayAddress (), ueLteDevs.Get (u)->GetIfIndex ());
+            ueStaticRouting->AddNetworkRouteTo(Ipv4Address(if2.GetAddress(0, 0)), Ipv4Mask("255.255.255.0"), epcHelper->GetUeDefaultGatewayAddress(), ueLteDevs.Get(u)->GetIfIndex());
+        }
+
+        setPos(pgw, 70, 0, 0);
+
+        address2.NewNetwork();
+    }
+
+    if (!disWifi)
+    {
+
+        Ptr<Node> bridgeWifi = CreateObject<Node>();
+        // Left link: H1 <-> WiFi-R
+        WifiHelper wifi = WifiHelper::Default();
+        wifi.SetRemoteStationManager("ns3::AarfWifiManager");
+        phy = YansWifiPhyHelper::Default();
+        YansWifiChannelHelper phyChannel = YansWifiChannelHelper::Default();
+        NqosWifiMacHelper mac;
+        phy.SetChannel(phyChannel.Create());
+        //mac.SetType ("ns3::AdhocWifiMac");
+        //
+        int WifiAPI = 0;
+
+        cmd_oss.str("");
+
+        cmd_oss << "wifi-default-" << WifiAPI;
+        Ssid ssid = Ssid(cmd_oss.str());
+
+        mac.SetType("ns3::StaWifiMac", "Ssid", SsidValue(ssid), "ActiveProbing", BooleanValue(false));
+
+        wifi.SetStandard(WIFI_PHY_STANDARD_80211a);
+
+        for (uint32_t u = 0; u < nodes.GetN(); ++u)
+        {
+            wifiDevice = wifi.Install(phy, mac, nodes.Get(u));
+            devices1.Add(wifiDevice);
+            // routerI = u+1;
+        }
+
+        routerI = nodes.GetN();
+
+        mac.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid));
+        wifiDevice = wifi.Install(phy, mac, routers.Get(0));
+
+        devices1.Add(wifiDevice);
+        // devices1 = wifi.Install (phy, mac, NodeContainer (nodes, routers.Get (0)));
+        // Assign ip addresses
+        if1 = address1.Assign(devices1);
+        // address1.NewNetwork ();
+
+        for (uint32_t u = 0; u < if1.GetN(); ++u)
+        {
+            cout << u << " " << if1.GetAddress(u, 0) << endl;
+        }
+
+        cout << "routerI=" << routerI << endl;
+
+        for (uint32_t u = 0; u < nodes.GetN(); ++u)
+        {
+            csmaNetDevice = csmahelperWifi.Install(NodeContainer(cn.Get(u), bridgeWifi));
+            devicesWifi.Add(csmaNetDevice.Get(0));
+            wifiBridgeDevices.Add(csmaNetDevice.Get(1));
+        }
+
+        csmaNetDevice = csmahelperWifi.Install(NodeContainer(routers.Get(0), bridgeWifi));
+
+        devicesWifi.Add(csmaNetDevice.Get(0));
+        wifiBridgeDevices.Add(csmaNetDevice.Get(1));
+
+        bridgeW.Install(bridgeWifi, wifiBridgeDevices);
+
+        if2Wifi = address2.Assign(devicesWifi);
+
+        cmd_oss.str("");
+        cmd_oss << if2Wifi.GetAddress(0, 0);
+        char subNet = cmd_oss.str().at(5);
+
+        cmd_oss.str("");
+        cmd_oss << "10.2." << subNet << "." << routerI;
+        for (uint32_t u = 0; u < nodes.GetN(); ++u)
+        {
+
+            Ptr<Ipv4StaticRouting> cnStaticRouting = ipv4routinghelper.GetStaticRouting(cn.Get(u)->GetObject<Ipv4>());
+            // cnStaticRouting->AddNetworkRouteTo(Ipv4Address (cmd_oss.str().c_str()), Ipv4Mask ("255.255.255.0"), devicesWifi.Get (u)->GetIfIndex ());
+            cnStaticRouting->AddNetworkRouteTo(Ipv4Address("10.1.0.0"), Ipv4Mask("255.255.0.0"), if2Wifi.GetAddress(routerI, 0), devicesWifi.Get(u)->GetIfIndex());
+
+            // setup ip routes
+        }
+
+        // we can comment this out, it should work the same, as the default route is right
+        wifiRouterStaticRouting->AddNetworkRouteTo(if2Wifi.GetAddress(0, 0), Ipv4Mask("255.255.255.0"), if1.GetAddress(routerI, 0), devicesWifi.Get(routerI)->GetIfIndex());
+        wifiRouterStaticRouting->AddNetworkRouteTo(Ipv4Address("10.1.0.0"), Ipv4Mask("255.255.255.0"), if2Wifi.GetAddress(routerI, 0), devices1.Get(routerI)->GetIfIndex());
+
+        //setPos (routers.Get (0), 70, 30, 0);
+
+        setPos(routers.Get(0), 0, 0, 0);
+        //address2.NewNetwork ();
+
+        // Global default route
+
+        for (uint32_t u = 0; u < nodes.GetN(); ++u)
+        {
+
+            Ptr<Ipv4StaticRouting> mnStaticRouting = ipv4routinghelper.GetStaticRouting(nodes.Get(u)->GetObject<Ipv4>());
+            mnStaticRouting->AddNetworkRouteTo(if2Wifi.GetAddress(0, 0), Ipv4Mask("255.255.255.0"), if1.GetAddress(routerI, 0), devices1.Get(u)->GetIfIndex());
+        }
+    }
+
+    wifiRouterStaticRouting->PrintRoutingTable(rtoutAP);
+    mnStaticRoutingForPrint->PrintRoutingTable(rtoutUE);
+    cnStaticRoutingForPrint->PrintRoutingTable(rtoutCN);
+
+    ApplicationContainer apps;
+
+    for (uint32_t u = 0; u < nodes.GetN(); ++u)
+    {
+        cmd_oss.str("");
+
+        if (!disLte)
+        {
+            cmd_oss << "7.0.0." << u + 2;
+        }
+        else
+        {
+            cmd_oss << "10.1.0." << u + 1;
+        }
+
+        //MpTcpBulkSendHelper source = MpTcpBulkSendHelper("ns3::TcpSocketFactory",
+        //BulkSendHelper onoff = BulkSendHelper("ns3::TcpSocketFactory",
+                                                      OnOffHelper onoff= OnOffHelper ("ns3::TcpSocketFactory",
+                                              InetSocketAddress(cmd_oss.str().c_str(), 9));
+        //source.SetAttribute("MaxBytes", UintegerValue(0));
+        //source.SetAttribute("Remote", InetSocketAddress (cmd_oss.str().c_str(), 9) );
+
+        onoff.SetAttribute ("OnTime", StringValue ("ns3::ConstantRandomVariable[Constant=1]"));
+        onoff.SetAttribute ("OffTime", StringValue ("ns3::ConstantRandomVariable[Constant=0]"));
+        onoff.SetAttribute ("PacketSize", StringValue ("1024"));
+        onoff.SetAttribute ("DataRate", StringValue ("10Mbps"));
+
+        onoff.SetAttribute("MaxBytes", UintegerValue(0));
+
+        apps = onoff.Install (cn.Get (u));
+        //apps = onoff.Install(nodes.Get(u));
+        apps.Start(Seconds(4.0));
+    }
+
+    for (uint32_t u = 0; u < nodes.GetN(); ++u)
+    {
+        cmd_oss.str("");
+        if (!disLte)
+        {
+            cmd_oss << "7.0.0." << u + 2;
+        }
+        else
+        {
+            cmd_oss << "10.1.0." << u + 1;
+        }
+
+        PacketSinkHelper sink = PacketSinkHelper("ns3::TcpSocketFactory",
+                                                 //MpTcpPacketSinkHelper sink = MpTcpPacketSinkHelper("ns3::TcpSocketFactory",
+                                                 //InetSocketAddress(Ipv4Address::GetAny(), 9));
+                                                 InetSocketAddress(cmd_oss.str().c_str(), 9));
+
+        apps = sink.Install(nodes.Get(u));
+        //apps = sink.Install (cn.Get (u));
+        apps.Start(Seconds(3));
+    }
+
+    for (unsigned int ii = 0; ii < nodes.GetN(); ii++)
+    {
+        char aa[10];
+        sprintf(aa, "%d", ii);
+        //std::string sink = "/NodeList/"+std::string(aa)+"/ApplicationList/*/$ns3::PacketSink/Rx";
+        std::string sinkString = "/NodeList/" + std::string(aa) + "/ApplicationList/*/$ns3::PacketSink/Rx";
+        //std::string sink = "/NodeList/[25-29]/ApplicationList/*/$ns3::PacketSink/Rx";
+        Config::Connect(sinkString, MakeCallback(&ReceivedPacket));
+    }
+
+    Simulator::Schedule(Seconds(INTERVAL / 2.0f), &Throughput);
+
+    //pointToPoint.EnablePcapAll ("mptcp-lte-wifi", false);
+    phy.EnablePcapAll("wifi", false);
+    csmahelper.EnablePcapAll("bridge-lte", false);
+    csmahelperWifi.EnablePcapAll("bridge-wifi", false);
+    //lteHelper->EnablePcapAll ("mptcp-lte-wifi", false);
+    lteHelper->EnableTraces();
+
+    // Output config store to txt format
+    Config::SetDefault("ns3::ConfigStore::Filename", StringValue("output-attributes.txt"));
+    Config::SetDefault("ns3::ConfigStore::FileFormat", StringValue("RawText"));
+    Config::SetDefault("ns3::ConfigStore::Mode", StringValue("Save"));
+    ConfigStore outputConfig2;
+    outputConfig2.ConfigureDefaults();
+    outputConfig2.ConfigureAttributes();
+
+    Simulator::Stop(Seconds(stopTime));
+    Simulator::Run();
+
+    //flowMonitor->SerializeToXmlFile("allFlow.xml", true, true);
+    //sleep(1);
+
+    Simulator::Destroy();
+
+    return 0;
+}

@@ -3,6 +3,7 @@
 .lock-wafbuild
 .waf*
 build/
+elf-cache/
 ns3waf/__init__.pyc
 *.pyc
 #wscript
