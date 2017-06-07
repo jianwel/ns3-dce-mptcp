@@ -40,6 +40,7 @@
 #include "ns3/bridge-module.h"
 #include "ns3/csma-helper.h"
 #include "ns3/inet-socket-address.h"
+#include "ns3/snr-tag.h"
 
 //#include "ns3/mp-tcp-bulk-send-application.h"
 
@@ -90,10 +91,58 @@ const int AREA_Y = 5000;
 
 const int IPERF_RANDOM_SART = 5;
 
-void ReceivedPacket(std::string context, Ptr<const Packet> p, const Address &addr)
+//void ReceivedPacketIPLayer(std::string context, const Ptr< const Packet > p, const TcpHeader &header, const Ptr< const TcpSocketBase > socket)
+void ReceivedPacketIPLayer(const Ptr<const Packet> p, const TcpHeader &header, const Ptr<const TcpSocketBase> socket)
 {
+    cout << "inside ip call back" << endl;
+    //double curTime = Simulator :: GetSeconds();
     m_bytesTotal[0] += p->GetSize();
     // cout<<context<<" "<<p->GetSize ()<<endl;
+
+#if 0
+    SnrTag tag;
+    if (p->PeekPacketTag(tag))
+    {
+        cout << "Received Packet with SRN = " << tag.Get() << endl;
+        double temp_snr = tag.Get();
+    }
+    else
+    {
+        cout << "peek return null" << endl;
+    }
+#endif 
+}
+
+void ReceivedPacket(std::string context, Ptr<const Packet> p, const Address &addr)
+{
+    double curTime = Simulator::Now().GetSeconds();
+    m_bytesTotal[0] += p->GetSize();
+    // cout<<context<<" "<<p->GetSize ()<<endl;
+
+#if 0 
+    SnrTag tag;
+    if (p->PeekPacketTag(tag))
+    {
+        cout << "Received Packet with SRN = " << tag.Get() << endl;
+        double temp_snr = tag.Get();
+    }
+    else
+    {
+        // cout<<"peek return null"<<endl;
+    }
+#endif
+
+    /*
+  bool found = p->RemovePacketTag (tag);
+if (found)
+  {
+  	double temp_snr = tag.Get();
+  }
+  else
+  {
+      cout<<"tag not found using remove"<<endl;
+  }
+  */
 }
 
 void Throughput() // in Mbps calculated every 2s
@@ -108,13 +157,13 @@ void Throughput() // in Mbps calculated every 2s
 
 int main(int argc, char *argv[])
 {
-   // LogComponentEnable("NoDceLteWifi", LOG_LEVEL_ALL);
+    // LogComponentEnable("NoDceLteWifi", LOG_LEVEL_ALL);
     //    LogComponentEnable ("MpTcpSocketBase", LOG_LEVEL_ALL);
     std::string bufSize = "";
     bool disWifi = false;
     bool disLte = false;
     bool isDownlink = true;
-    double stopTime = 20.0;
+    double stopTime = 7.0;
 
     //unit in nanosecond, so this is  0.1ms
     int p2pdelay = 100000;
@@ -167,15 +216,15 @@ int main(int argc, char *argv[])
 
     if (disWifi && disLte)
     {
-        cout<<"no active interface"<<endl;
+        cout << "no active interface" << endl;
         return 0;
     }
 
     if (disWifi)
-        cout<<"wifi is disabled"<<endl;
+        cout << "wifi is disabled" << endl;
 
     if (disLte)
-        cout<<"lte is disabled"<<endl;
+        cout << "lte is disabled" << endl;
 
     GlobalValue::Bind("ChecksumEnabled", BooleanValue(true));
     NodeContainer nodes, routers, cn;
@@ -196,7 +245,7 @@ int main(int argc, char *argv[])
     //Config::SetDefault("ns3::TcpSocket::SegmentSize", UintegerValue(1400));
     //Config::SetDefault("ns3::TcpSocket::DelAckCount", UintegerValue(0));
 
-     Config::SetDefault("ns3::DropTailQueue::Mode", StringValue("QUEUE_MODE_PACKETS"));
+    Config::SetDefault("ns3::DropTailQueue::Mode", StringValue("QUEUE_MODE_PACKETS"));
     //Config::SetDefault("ns3::DropTailQueue::MaxPackets", UintegerValue(100));
     Config::SetDefault("ns3::DropTailQueue::MaxPackets", UintegerValue(1000000000));
 
@@ -469,11 +518,11 @@ Ptr<RateErrorModel> em1 =
 
             // setup ip routes
         }
-
+        /*
         // we can comment this out, it should work the same, as the default route is right
         wifiRouterStaticRouting->AddNetworkRouteTo(if2Wifi.GetAddress(0, 0), Ipv4Mask("255.255.255.0"), if1.GetAddress(routerI, 0), devicesWifi.Get(routerI)->GetIfIndex());
         wifiRouterStaticRouting->AddNetworkRouteTo(Ipv4Address("10.1.0.0"), Ipv4Mask("255.255.255.0"), if2Wifi.GetAddress(routerI, 0), devices1.Get(routerI)->GetIfIndex());
-
+*/
         //setPos (routers.Get (0), 70, 30, 0);
 
         setPos(routers.Get(0), 0, 0, 0);
@@ -510,19 +559,19 @@ Ptr<RateErrorModel> em1 =
 
         //MpTcpBulkSendHelper source = MpTcpBulkSendHelper("ns3::TcpSocketFactory",
         //BulkSendHelper onoff = BulkSendHelper("ns3::TcpSocketFactory",
-                                                      OnOffHelper onoff= OnOffHelper ("ns3::TcpSocketFactory",
-                                              InetSocketAddress(cmd_oss.str().c_str(), 9));
+        OnOffHelper onoff = OnOffHelper("ns3::TcpSocketFactory",
+                                        InetSocketAddress(cmd_oss.str().c_str(), 9));
         //source.SetAttribute("MaxBytes", UintegerValue(0));
         //source.SetAttribute("Remote", InetSocketAddress (cmd_oss.str().c_str(), 9) );
 
-        onoff.SetAttribute ("OnTime", StringValue ("ns3::ConstantRandomVariable[Constant=1]"));
-        onoff.SetAttribute ("OffTime", StringValue ("ns3::ConstantRandomVariable[Constant=0]"));
-        onoff.SetAttribute ("PacketSize", StringValue ("1024"));
-        onoff.SetAttribute ("DataRate", StringValue ("10Mbps"));
+        onoff.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+        onoff.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+        onoff.SetAttribute("PacketSize", StringValue("1024"));
+        onoff.SetAttribute("DataRate", StringValue("10Mbps"));
 
         onoff.SetAttribute("MaxBytes", UintegerValue(0));
 
-        apps = onoff.Install (cn.Get (u));
+        apps = onoff.Install(cn.Get(u));
         //apps = onoff.Install(nodes.Get(u));
         apps.Start(Seconds(4.0));
     }
@@ -544,6 +593,7 @@ Ptr<RateErrorModel> em1 =
                                                  //InetSocketAddress(Ipv4Address::GetAny(), 9));
                                                  InetSocketAddress(cmd_oss.str().c_str(), 9));
 
+        //sink.SetRecvCallback (MakeCallback (&ReceivedPacketIPLayer));
         apps = sink.Install(nodes.Get(u));
         //apps = sink.Install (cn.Get (u));
         apps.Start(Seconds(3));
@@ -557,6 +607,24 @@ Ptr<RateErrorModel> em1 =
         std::string sinkString = "/NodeList/" + std::string(aa) + "/ApplicationList/*/$ns3::PacketSink/Rx";
         //std::string sink = "/NodeList/[25-29]/ApplicationList/*/$ns3::PacketSink/Rx";
         Config::Connect(sinkString, MakeCallback(&ReceivedPacket));
+    }
+
+    // for (unsigned int ii = 0; ii < nodes.GetN(); ii++)
+    {
+        char aa[10];
+        // sprintf(aa, "%d", ii);
+        //std::string sink = "/NodeList/"+std::string(aa)+"/ApplicationList/*/$ns3::PacketSink/Rx";
+        //std::string sinkString = "/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/*/$ns3::TcpSocketBase/Rx";
+        std::string sinkString = "/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Phy";
+        //std::string sinkString = "/NodeList/*/DeviceList/*/$ns3::Node/$ns3::TcpSocketBase/Rx";
+        //std::string sinkString = "/NodeList/*/$ns3::TcpSocketBase/Rx";
+        //std::string sinkString = "/NodeList/*/$ns3::TcpL4Protocol/SocketList/*/$ns3::TcpSocketBase/Rx";
+        //std::string sinkString = "/NodeList/*/$ns3::TcpL4Protocol/SocketList/*/Rx";
+
+        //std::string sink = "/NodeList/[25-29]/ApplicationList/*/$ns3::PacketSink/Rx";
+
+        //Config::Connect(sinkString, MakeCallback(&ReceivedPacketIPLayer));
+        Config::ConnectWithoutContext(sinkString, MakeCallback(&ReceivedPacketIPLayer));
     }
 
     Simulator::Schedule(Seconds(INTERVAL / 2.0f), &Throughput);
@@ -576,7 +644,7 @@ Ptr<RateErrorModel> em1 =
     outputConfig2.ConfigureDefaults();
     outputConfig2.ConfigureAttributes();
 
-    Simulator::Stop(Seconds(stopTime));
+    Simulator::Stop(Seconds(stopTime + 1));
     Simulator::Run();
 
     //flowMonitor->SerializeToXmlFile("allFlow.xml", true, true);
