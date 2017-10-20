@@ -4,7 +4,8 @@ import sys
 import time
 import math
 from tables import *
-from sumUdp import *
+#from sumUdp import *
+from sumUdpFading import *
 #from sumUdp import getMac
 
 timestr = time.strftime("%Y%m%d-%H%M%S")
@@ -15,16 +16,19 @@ os.mkdir(folderName)
 
 fb = 20000000
 nUE = 1
+Dlist=[]
 #Dlist =[500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000]
+#Dlist =[0, 50, 100, 300, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500, 10000, 11000, ]
+#Dlist =[0, 50, 100, 300, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500, 10000, 11000, ]
 #Dlist =[ 50, 100, 300, 500, 1000, 2000,  3000, 4000,  5000,  6000, 7000,  8000]
 #Dlist =[ 20000, 24000, 13000,  15000 ]
 #Dlist =[ 14000, 16000, 18000]
 #Dlist =[ 15000, 17000, 19000, 21000]
 #Dlist =[ 22000, 23000]
-Dlist =[0, 50, 100, 300, 500]
+#Dlist =[0, 50, 100, 300, 500]
 #Dlist =[1300, 1500, 9000, 10000, 11000, 12000]
 
-for i in range(2, 23):
+for i in range(1, 23):
     Dlist.append(i*1000)
 
 
@@ -152,7 +156,7 @@ def runOnce(nUE, D, dataFolder, fb):
 
     #TODO: need to use the weighted average of #rb of every user to calc the scale here
     scale = 0.25;
-    shannon = math.log(1+float(re2.sinr)) * (fb /1000000.0) * scale;
+    shannon = math.log(1+float(re2.sinr), 2) * (fb /1000000.0) * scale;
     nyquist = (2* fb/ 1000000.0) * math.log(getNBits(reMac.mcs), 2) *scale
     perror = shannon - float(tcpTh)
     perrorRate = perror / float(tcpTh) *100.0

@@ -9,3 +9,4 @@ ns3waf/__init__.pyc
 wutils.py
 pcap
 data/
+elf-cache/

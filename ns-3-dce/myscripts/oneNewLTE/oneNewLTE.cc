@@ -580,7 +580,10 @@ cout<<"isUDP =" <<isUDP<<endl;
   string fadingFilePath = "../ns-3-dev-dce/src/lte/model/fading-traces/";
   //string traceName = fadingFilePath.append( "fading_trace_EPA_3kmph.fad");
   //string traceName = fadingFilePath.append( "fading_trace_ETU_0kmph.fad");
-  string traceName = fadingFilePath.append("defaultFre_fading_trace_EPA_0kmph_25RB.fad");
+  //string traceName = fadingFilePath.append("defaultFre_fading_trace_EPA_0kmph_25RB.fad");
+  //
+  //changed on oct 18th to reproduce with fading 
+  string traceName = fadingFilePath.append("defaultFre_fading_trace_EPA_3kmph_25RB.fad");
   cout<<"traceName:  "<<traceName << endl;
     //ifTraceFile.open (traceName.c_str(), std::ifstream::in);
  // if (ifTraceFile.good ())
