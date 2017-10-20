@@ -265,12 +265,32 @@ PacketTagList::Peek (Tag &tag) const
 {
   NS_LOG_FUNCTION (this << tag.GetInstanceTypeId ());
   TypeId tid = tag.GetInstanceTypeId ();
+
+
+     if(! tag.GetInstanceTypeId().GetName().compare("ns3::NewSnrTag"))
+    {
+      std::cout<<" in peek of newSnrTag"<<std::endl;
+}
+  //for (struct TagData *cur = m_next, int i =0; cur != 0; cur = cur->next, i++) 
   for (struct TagData *cur = m_next; cur != 0; cur = cur->next) 
     {
+
+//ljw
+     // std::cout<<"found but does not match"<<std::endl;
+     if(! tag.GetInstanceTypeId().GetName().compare("ns3::NewSnrTag"))
+{
+      NS_LOG_FUNCTION (this<<"passIN" << tag.GetInstanceTypeId ());
+      NS_LOG_FUNCTION (this <<"inPacket" << cur->tid);
+}
       if (cur->tid == tid) 
         {
           /* found tag */
+
+     if(! tag.GetInstanceTypeId().GetName().compare("ns3::NewSnrTag"))
+          std::cout<<"type match "<< tag.GetInstanceTypeId().GetName()<<std::endl;
           tag.Deserialize (TagBuffer (cur->data, cur->data + TagData::MAX_SIZE));
+     if(! tag.GetInstanceTypeId().GetName().compare("ns3::NewSnrTag"))
+          std::cout<<"return true for  "<< tag.GetInstanceTypeId().GetName()<<std::endl;
           return true;
         }
     }

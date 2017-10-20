@@ -26,6 +26,7 @@
 #include "wifi-preamble.h"
 #include "wifi-phy-state-helper.h"
 #include "error-rate-model.h"
+#include "new-snr-tag.h"
 #include "ns3/simulator.h"
 #include "ns3/packet.h"
 #include "ns3/assert.h"
@@ -1186,6 +1187,25 @@ YansWifiPhy::EndReceive (Ptr<Packet> packet, enum WifiPreamble preamble, enum mp
           struct signalNoiseDbm signalNoise;
           signalNoise.signal = RatioToDb (event->GetRxPowerW ()) + 30;
           signalNoise.noise = RatioToDb (event->GetRxPowerW () / snrPer.snr) - GetRxNoiseFigure () + 30;
+//ljw
+      NewSnrTag snrTag;
+      snrTag.Set(snrPer.snr);
+  	if (! packet->PeekPacketTag (snrTag))
+    	{
+      	packet->AddPacketTag (snrTag);
+      	NS_LOG_DEBUG("Add SNR Tag with value :" << snrTag.Get());
+  //    	std::cout<<"Add SNR Tag with value :" << snrTag.Get()<<std::endl;
+    	}
+
+
+/*
+if(packet->PeekPacketTag(snrTag)){
+std::cout<<"has tag after add"<<std::endl;
+} 
+*/ 
+
+//      packet->RemovePacketTag(snrTag);
+//ljw
           struct mpduInfo aMpdu;
           aMpdu.type = mpdutype;
           aMpdu.mpduRefNumber = m_rxMpduReferenceNumber;

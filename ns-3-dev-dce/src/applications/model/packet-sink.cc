@@ -30,6 +30,7 @@
 #include "ns3/packet.h"
 #include "ns3/trace-source-accessor.h"
 #include "ns3/udp-socket-factory.h"
+#include "ns3/new-snr-tag.h"
 #include "packet-sink.h"
 
 namespace ns3 {
@@ -169,6 +170,21 @@ void PacketSink::HandleRead (Ptr<Socket> socket)
           break;
         }
       m_totalRx += packet->GetSize ();
+
+//ljw - add
+    NewSnrTag tag;
+    if (packet->PeekPacketTag(tag))
+    {
+        std::cout << "in sink app: Received Packet with SNR = " << tag.Get() <<socket->GetNode()->GetId() << std::endl;
+        //exit(0);
+//        double temp_snr = tag.Get();
+    }
+    else
+    {
+       //std::cout << "in sink: peek return null" << std::endl;
+    }
+//ljw
+
       if (InetSocketAddress::IsMatchingType (from))
         {
           NS_LOG_INFO ("At time " << Simulator::Now ().GetSeconds ()
