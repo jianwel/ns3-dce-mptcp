@@ -5,7 +5,7 @@ def getNBits(mcs):
         return 4
     elif mcs>=0 and mcs<10:
         return 2
-    elif
+    else:
         return 2
 
 
